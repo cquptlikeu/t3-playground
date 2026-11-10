@@ -19,7 +19,7 @@ function createMemoryStorage(initial) {
 
 test('createTodo trims text and rejects empty input', () => {
   const todo = store.createTodo('  买牛奶  ', { id: 'a1', now: 100 });
-  assert.deepEqual(todo, { id: 'a1', text: '买牛奶', done: false, createdAt: 100 });
+  assert.equal(todo.priority, 'medium');
   assert.equal(store.createTodo('   '), null);
   assert.equal(store.createTodo(''), null);
   assert.equal(store.createTodo(null), null);
@@ -28,6 +28,24 @@ test('createTodo trims text and rejects empty input', () => {
 test('createTodo caps text length at MAX_TEXT_LENGTH', () => {
   const todo = store.createTodo('x'.repeat(500), { id: 'a2', now: 0 });
   assert.equal(todo.text.length, store.MAX_TEXT_LENGTH);
+});
+
+test('priority defaults to medium and accepts the three supported levels', () => {
+  assert.equal(store.createTodo('A').priority, 'medium');
+  assert.equal(store.createTodo('A', { priority: 'high' }).priority, 'high');
+  assert.equal(store.createTodo('A', { priority: 'low' }).priority, 'low');
+  assert.equal(store.createTodo('A', { priority: 'urgent' }).priority, 'medium');
+});
+
+test('sortByPriority orders high to low and preserves equal-priority order', () => {
+  const todos = [
+    { id: 'm', priority: 'medium' },
+    { id: 'l', priority: 'low' },
+    { id: 'h1', priority: 'high' },
+    { id: 'h2', priority: 'high' },
+  ];
+  assert.deepEqual(store.sortByPriority(todos).map((todo) => todo.id), ['h1', 'h2', 'm', 'l']);
+  assert.equal(todos[0].id, 'm');
 });
 
 test('addTodo appends without mutating the original list', () => {
@@ -77,8 +95,8 @@ test('countRemaining counts unfinished items', () => {
 test('saveTodos then loadTodos round-trips the list', () => {
   const storage = createMemoryStorage();
   const todos = [
-    { id: 't1', text: '写 README', done: false, createdAt: 10 },
-    { id: 't2', text: '跑测试', done: true, createdAt: 20 },
+    { id: 't1', text: 'write README', done: false, createdAt: 10, priority: 'medium' },
+    { id: 't2', text: 'run tests', done: true, createdAt: 20, priority: 'high' },
   ];
   store.saveTodos(storage, todos);
   assert.deepEqual(store.loadTodos(storage), todos);
@@ -96,7 +114,7 @@ test('loadTodos tolerates corrupted JSON', () => {
 test('loadTodos drops malformed entries but keeps valid ones', () => {
   const storage = createMemoryStorage({
     [store.STORAGE_KEY]: JSON.stringify([
-      { id: 'ok', text: '有效', done: true, createdAt: 5 },
+    { id: 'ok', text: 'valid', done: true, createdAt: 5, priority: 'medium' },
       { id: '', text: '缺少 id', done: false, createdAt: 6 },
       { id: 'no-text', text: '   ', done: false, createdAt: 7 },
       null,
@@ -104,7 +122,7 @@ test('loadTodos drops malformed entries but keeps valid ones', () => {
     ]),
   });
   assert.deepEqual(store.loadTodos(storage), [
-    { id: 'ok', text: '有效', done: true, createdAt: 5 },
+    { id: 'ok', text: 'valid', done: true, createdAt: 5, priority: 'medium' },
   ]);
 });
 

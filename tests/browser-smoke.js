@@ -226,6 +226,19 @@ async function main() {
       add('第二条');
       out.countAfterSecondAdd = qa('.todo').length;
 
+      qa('.todo__priority-select')[0].value = 'high';
+      qa('.todo__priority-select')[0].dispatchEvent(new Event('change', { bubbles: true }));
+      qa('.todo__priority-select')[1].value = 'medium';
+      qa('.todo__priority-select')[1].dispatchEvent(new Event('change', { bubbles: true }));
+      out.visiblePriorities = qa('.todo__priority').map((el) => el.textContent);
+      qa('.todo__priority-select')[1].value = 'low';
+      qa('.todo__priority-select')[1].dispatchEvent(new Event('change', { bubbles: true }));
+      q('#priority-sort').value = 'priority';
+      q('#priority-sort').dispatchEvent(new Event('change', { bubbles: true }));
+      out.priorityOrder = qa('.todo__priority').map((el) => el.textContent);
+      q('#priority-sort').value = 'manual';
+      q('#priority-sort').dispatchEvent(new Event('change', { bubbles: true }));
+
       qa('.todo__checkbox')[0].click();
       out.firstDone = q('.todo').classList.contains('todo--done');
       out.summaryAfterToggle = q('#summary').textContent;
@@ -244,6 +257,8 @@ async function main() {
     assert(flow.inputCleared === true, 'input is cleared after adding');
     assert(flow.emptyHidden === true, 'empty state hides after adding');
     assert(flow.countAfterSecondAdd === 2, 'second todo is added');
+    assert(flow.visiblePriorities[0] === '高' && flow.visiblePriorities[1] === '中', 'high and medium priority badges render');
+    assert(flow.priorityOrder[0] === '高' && flow.priorityOrder[1] === '低', 'priority sort puts high before low');
     assert(flow.firstDone === true, 'checkbox click marks the first todo done');
     assert(flow.summaryAfterToggle === '共 2 项，1 项未完成', 'summary counts only unfinished todos');
     assert(flow.remainingTexts.length === 1 && flow.remainingTexts[0] === '写冒烟测试', 'delete removes the clicked todo');

@@ -8,6 +8,7 @@
     toggleTodo,
     removeTodo,
     countRemaining,
+    sortByPriority,
   } = window.TodoStore;
 
   const form = document.getElementById('todo-form');
@@ -16,6 +17,8 @@
   const list = document.getElementById('todo-list');
   const emptyState = document.getElementById('empty-state');
   const status = document.getElementById('status');
+  const priorityInput = document.getElementById('priority-input');
+  const prioritySort = document.getElementById('priority-sort');
 
   let todos = [];
 
@@ -59,6 +62,22 @@
     text.className = 'todo__text';
     text.textContent = todo.text;
 
+    const priority = document.createElement('span');
+    priority.className = 'todo__priority todo__priority--' + todo.priority;
+    priority.textContent = { high: '高', medium: '中', low: '低' }[todo.priority] || '中';
+    priority.setAttribute('aria-label', '优先级：' + priority.textContent);
+
+    const prioritySelect = document.createElement('select');
+    prioritySelect.className = 'todo__priority-select';
+    prioritySelect.setAttribute('aria-label', '设置优先级：' + todo.text);
+    [['high', '高'], ['medium', '中'], ['low', '低']].forEach(function (entry) {
+      const option = document.createElement('option');
+      option.value = entry[0];
+      option.textContent = entry[1];
+      option.selected = todo.priority === entry[0];
+      prioritySelect.append(option);
+    });
+
     label.append(checkbox, text);
 
     const removeButton = document.createElement('button');
@@ -67,13 +86,14 @@
     removeButton.textContent = '删除';
     removeButton.setAttribute('aria-label', '删除：' + todo.text);
 
-    item.append(label, removeButton);
+    item.append(label, priority, prioritySelect, removeButton);
     return item;
   }
 
   function render() {
     list.replaceChildren();
-    todos.forEach(function (todo) {
+    const visibleTodos = prioritySort.value === 'priority' ? sortByPriority(todos) : todos;
+    visibleTodos.forEach(function (todo) {
       list.append(createItem(todo));
     });
 
@@ -87,7 +107,7 @@
 
   form.addEventListener('submit', function (event) {
     event.preventDefault();
-    const next = addTodo(todos, input.value);
+    const next = addTodo(todos, input.value, { priority: priorityInput.value });
     if (next === todos) {
       input.focus();
       return;
@@ -100,6 +120,16 @@
   });
 
   list.addEventListener('change', function (event) {
+    const prioritySelect = event.target.closest('.todo__priority-select');
+    if (prioritySelect) {
+      const item = prioritySelect.closest('.todo');
+      todos = todos.map(function (todo) {
+        return todo.id === item.dataset.id ? Object.assign({}, todo, { priority: prioritySelect.value }) : todo;
+      });
+      persist();
+      render();
+      return;
+    }
     const checkbox = event.target.closest('.todo__checkbox');
     if (!checkbox) return;
     const item = checkbox.closest('.todo');
@@ -108,6 +138,8 @@
     persist();
     render();
   });
+
+  prioritySort.addEventListener('change', render);
 
   list.addEventListener('click', function (event) {
     const button = event.target.closest('.todo__delete');
