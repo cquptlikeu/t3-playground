@@ -70,6 +70,18 @@
       }).map(function (entry) { return entry.todo; });
   }
 
+  /**
+   * Returns the todos whose text contains the query as a case-insensitive
+   * substring. A blank query matches everything. The input list is untouched.
+   */
+  function filterTodos(todos, query) {
+    const needle = String(query == null ? '' : query).trim().toLowerCase();
+    if (!needle) return todos.slice();
+    return todos.filter(function (todo) {
+      return String(todo.text).toLowerCase().indexOf(needle) !== -1;
+    });
+  }
+
   function sanitizeTodo(value) {
     if (!value || typeof value !== 'object') return null;
     const id = typeof value.id === 'string' && value.id ? value.id : '';
@@ -116,6 +128,7 @@
     removeTodo: removeTodo,
     countRemaining: countRemaining,
     sortByPriority: sortByPriority,
+    filterTodos: filterTodos,
     sanitizeTodos: sanitizeTodos,
     loadTodos: loadTodos,
     saveTodos: saveTodos,

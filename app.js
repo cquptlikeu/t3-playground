@@ -9,10 +9,13 @@
     removeTodo,
     countRemaining,
     sortByPriority,
+    filterTodos,
   } = window.TodoStore;
 
   const form = document.getElementById('todo-form');
   const input = document.getElementById('todo-input');
+  const searchInput = document.getElementById('search-input');
+  const searchClear = document.getElementById('search-clear');
   const summary = document.getElementById('summary');
   const list = document.getElementById('todo-list');
   const emptyState = document.getElementById('empty-state');
@@ -91,18 +94,39 @@
   }
 
   function render() {
+    const rawQuery = searchInput.value;
+    const query = rawQuery.trim();
+    const visible = filterTodos(todos, query);
+    const total = todos.length;
+
     list.replaceChildren();
-    const visibleTodos = prioritySort.value === 'priority' ? sortByPriority(todos) : todos;
+    const visibleTodos = prioritySort.value === 'priority' ? sortByPriority(visible) : visible;
     visibleTodos.forEach(function (todo) {
       list.append(createItem(todo));
     });
 
-    const remaining = countRemaining(todos);
-    summary.textContent = todos.length === 0
-      ? '暂无待办'
-      : '共 ' + todos.length + ' 项，' + remaining + ' 项未完成';
-    emptyState.hidden = todos.length > 0;
-    list.hidden = todos.length === 0;
+    if (total === 0) {
+      summary.textContent = '暂无待办';
+    } else if (query) {
+      summary.textContent = '匹配 ' + visible.length + ' 项，共 ' + total + ' 项';
+    } else {
+      summary.textContent = '共 ' + total + ' 项，' + countRemaining(todos) + ' 项未完成';
+    }
+
+    const noMatches = total > 0 && query !== '' && visible.length === 0;
+    if (total === 0) {
+      emptyState.textContent = '还没有待办，先添加一条吧。';
+    } else if (noMatches) {
+      emptyState.textContent = '没有匹配「' + query + '」的待办。';
+    }
+    emptyState.hidden = !(total === 0 || noMatches);
+    list.hidden = visible.length === 0;
+    searchClear.hidden = rawQuery.length === 0;
+  }
+
+  function clearSearch() {
+    searchInput.value = '';
+    render();
   }
 
   form.addEventListener('submit', function (event) {
@@ -117,6 +141,22 @@
     input.value = '';
     render();
     input.focus();
+  });
+
+  searchInput.addEventListener('input', render);
+
+  searchInput.addEventListener('search', render);
+
+  searchInput.addEventListener('keydown', function (event) {
+    if (event.key === 'Escape' && searchInput.value !== '') {
+      event.preventDefault();
+      clearSearch();
+    }
+  });
+
+  searchClear.addEventListener('click', function () {
+    clearSearch();
+    searchInput.focus();
   });
 
   list.addEventListener('change', function (event) {

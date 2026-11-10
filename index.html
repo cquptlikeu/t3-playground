@@ -31,6 +31,18 @@
       <button class="composer__submit" type="submit">添加</button>
     </form>
 
+    <div class="search">
+      <label class="visually-hidden" for="search-input">搜索待办</label>
+      <input
+        id="search-input"
+        class="search__input"
+        type="search"
+        placeholder="搜索待办内容"
+        autocomplete="off"
+      />
+      <button id="search-clear" class="search__clear" type="button" hidden>清空</button>
+    </div>
+
     <p id="summary" class="summary" aria-live="polite"></p>
 
     <label class="sort-control" for="priority-sort">排序：
@@ -41,7 +53,7 @@
     </label>
 
     <ul id="todo-list" class="todo-list" aria-label="待办列表"></ul>
-    <p id="empty-state" class="empty-state">还没有待办，先添加一条吧。</p>
+    <p id="empty-state" class="empty-state" aria-live="polite">还没有待办，先添加一条吧。</p>
 
     <p id="status" class="status" role="status" aria-live="polite"></p>
   </main>
