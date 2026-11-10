@@ -74,6 +74,36 @@ test('countRemaining counts unfinished items', () => {
   );
 });
 
+const FILTER_TODOS = [
+  { id: 't1', text: 'Buy milk', done: false, createdAt: 1 },
+  { id: 't2', text: '写周报', done: true, createdAt: 2 },
+  { id: 't3', text: '买牛奶', done: false, createdAt: 3 },
+];
+
+test('filterTodos returns every todo for a blank query', () => {
+  assert.deepEqual(store.filterTodos(FILTER_TODOS, ''), FILTER_TODOS);
+  assert.deepEqual(store.filterTodos(FILTER_TODOS, '   '), FILTER_TODOS);
+  assert.deepEqual(store.filterTodos(FILTER_TODOS), FILTER_TODOS);
+  assert.deepEqual(store.filterTodos([], 'milk'), []);
+});
+
+test('filterTodos matches a trimmed, case-insensitive substring', () => {
+  assert.deepEqual(store.filterTodos(FILTER_TODOS, '  MILK ').map((t) => t.id), ['t1']);
+  assert.deepEqual(store.filterTodos(FILTER_TODOS, '周报').map((t) => t.id), ['t2']);
+  assert.deepEqual(store.filterTodos(FILTER_TODOS, '牛').map((t) => t.id), ['t3']);
+  assert.deepEqual(store.filterTodos(FILTER_TODOS, 'i').map((t) => t.id), ['t1']);
+});
+
+test('filterTodos returns an empty list when nothing matches', () => {
+  assert.deepEqual(store.filterTodos(FILTER_TODOS, '不存在的关键词'), []);
+});
+
+test('filterTodos does not mutate the input list', () => {
+  const snapshot = JSON.parse(JSON.stringify(FILTER_TODOS));
+  store.filterTodos(FILTER_TODOS, 'milk');
+  assert.deepEqual(FILTER_TODOS, snapshot);
+});
+
 test('saveTodos then loadTodos round-trips the list', () => {
   const storage = createMemoryStorage();
   const todos = [

@@ -267,6 +267,75 @@ async function main() {
     assert(afterReload.emptyHidden === true, 'empty state stays hidden after reload');
     assert(afterReload.summary === '共 1 项，0 项未完成', 'summary is restored after reload');
 
+    console.log('\n[4] Search filter');
+    const search = await cdp.evaluate(`(() => {
+      const q = (s) => document.querySelector(s);
+      const qa = (s) => [...document.querySelectorAll(s)];
+      const add = (text) => {
+        q('#todo-input').value = text;
+        q('#todo-form').dispatchEvent(new Event('submit', { bubbles: true, cancelable: true }));
+      };
+      const type = (value) => {
+        const el = q('#search-input');
+        el.value = value;
+        el.dispatchEvent(new Event('input', { bubbles: true }));
+      };
+      const out = {};
+
+      add('Buy Milk');
+      add('写周报');
+      out.countBeforeSearch = qa('.todo').length;
+
+      type('milk');
+      out.caseInsensitiveMatches = qa('.todo__text').map((el) => el.textContent);
+      out.summaryMatched = q('#summary').textContent;
+      out.emptyHiddenWhileMatching = q('#empty-state').hidden;
+      out.clearVisible = !q('#search-clear').hidden;
+
+      type('周报');
+      out.chineseMatches = qa('.todo__text').map((el) => el.textContent);
+
+      type('不存在的关键词');
+      out.noMatchCount = qa('.todo').length;
+      out.noMatchListHidden = q('#todo-list').hidden;
+      out.noMatchEmptyVisible = !q('#empty-state').hidden;
+      out.noMatchMessage = q('#empty-state').textContent;
+      out.noMatchSummary = q('#summary').textContent;
+      out.storageDuringSearch = JSON.parse(localStorage.getItem('t3-todo-app.v1')).length;
+
+      q('#search-clear').click();
+      out.afterClearCount = qa('.todo').length;
+      out.afterClearValue = q('#search-input').value;
+      out.afterClearSummary = q('#summary').textContent;
+      out.afterClearEmptyHidden = q('#empty-state').hidden;
+      out.afterClearClearHidden = q('#search-clear').hidden;
+      out.afterClearStorage = JSON.parse(localStorage.getItem('t3-todo-app.v1')).length;
+
+      type('milk');
+      q('#search-input').dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true, cancelable: true }));
+      out.afterEscapeValue = q('#search-input').value;
+      out.afterEscapeCount = qa('.todo').length;
+      return out;
+    })()`);
+    assert(search.countBeforeSearch === 3, 'search starts from the full list');
+    assert(search.caseInsensitiveMatches.length === 1 && search.caseInsensitiveMatches[0] === 'Buy Milk', 'search matches case-insensitively');
+    assert(search.summaryMatched === '匹配 1 项，共 3 项', 'summary shows matched and total counts while searching');
+    assert(search.emptyHiddenWhileMatching === true, 'empty state is hidden when the search has matches');
+    assert(search.clearVisible === true, 'clear button appears while a search is active');
+    assert(search.chineseMatches.length === 1 && search.chineseMatches[0] === '写周报', 'search matches Chinese keywords');
+    assert(search.noMatchCount === 0 && search.noMatchListHidden === true, 'no results hides the list');
+    assert(search.noMatchEmptyVisible === true, 'no results shows the empty state');
+    assert(search.noMatchMessage === '没有匹配「不存在的关键词」的待办。', 'no-result message includes the keyword');
+    assert(search.noMatchSummary === '匹配 0 项，共 3 项', 'summary reports zero matches');
+    assert(search.storageDuringSearch === 3, 'filtering does not change stored data');
+    assert(search.afterClearCount === 3, 'clearing the search restores the full list');
+    assert(search.afterClearValue === '', 'clear button empties the search field');
+    assert(search.afterClearSummary === '共 3 项，2 项未完成', 'summary returns to the total after clearing');
+    assert(search.afterClearEmptyHidden === true, 'empty state stays hidden after clearing');
+    assert(search.afterClearClearHidden === true, 'clear button hides when the search is empty');
+    assert(search.afterClearStorage === 3, 'clearing the search leaves stored data untouched');
+    assert(search.afterEscapeValue === '' && search.afterEscapeCount === 3, 'Escape clears the search and restores the full list');
+
     assert(pageErrors.length === 0, 'no uncaught page exceptions (' + pageErrors.length + ')');
     console.log('\nSMOKE TEST PASSED');
   } finally {
