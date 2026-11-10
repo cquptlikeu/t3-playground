@@ -22,6 +22,12 @@
         placeholder="输入待办内容，按 Enter 添加"
         maxlength="200"
       />
+      <label class="visually-hidden" for="priority-input">优先级</label>
+      <select id="priority-input" class="composer__priority" aria-label="新待办优先级">
+        <option value="high">高</option>
+        <option value="medium" selected>中</option>
+        <option value="low">低</option>
+      </select>
       <button class="composer__submit" type="submit">添加</button>
     </form>
 
@@ -38,6 +44,13 @@
     </div>
 
     <p id="summary" class="summary" aria-live="polite"></p>
+
+    <label class="sort-control" for="priority-sort">排序：
+      <select id="priority-sort" aria-label="排序方式">
+        <option value="manual">默认顺序</option>
+        <option value="priority">按优先级（高到低）</option>
+      </select>
+    </label>
 
     <ul id="todo-list" class="todo-list" aria-label="待办列表"></ul>
     <p id="empty-state" class="empty-state" aria-live="polite">还没有待办，先添加一条吧。</p>

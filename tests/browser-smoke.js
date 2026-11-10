@@ -226,6 +226,19 @@ async function main() {
       add('第二条');
       out.countAfterSecondAdd = qa('.todo').length;
 
+      qa('.todo__priority-select')[0].value = 'high';
+      qa('.todo__priority-select')[0].dispatchEvent(new Event('change', { bubbles: true }));
+      qa('.todo__priority-select')[1].value = 'medium';
+      qa('.todo__priority-select')[1].dispatchEvent(new Event('change', { bubbles: true }));
+      out.visiblePriorities = qa('.todo__priority').map((el) => el.textContent);
+      qa('.todo__priority-select')[1].value = 'low';
+      qa('.todo__priority-select')[1].dispatchEvent(new Event('change', { bubbles: true }));
+      q('#priority-sort').value = 'priority';
+      q('#priority-sort').dispatchEvent(new Event('change', { bubbles: true }));
+      out.priorityOrder = qa('.todo__priority').map((el) => el.textContent);
+      q('#priority-sort').value = 'manual';
+      q('#priority-sort').dispatchEvent(new Event('change', { bubbles: true }));
+
       qa('.todo__checkbox')[0].click();
       out.firstDone = q('.todo').classList.contains('todo--done');
       out.summaryAfterToggle = q('#summary').textContent;
@@ -244,6 +257,8 @@ async function main() {
     assert(flow.inputCleared === true, 'input is cleared after adding');
     assert(flow.emptyHidden === true, 'empty state hides after adding');
     assert(flow.countAfterSecondAdd === 2, 'second todo is added');
+    assert(flow.visiblePriorities[0] === '高' && flow.visiblePriorities[1] === '中', 'high and medium priority badges render');
+    assert(flow.priorityOrder[0] === '高' && flow.priorityOrder[1] === '低', 'priority sort puts high before low');
     assert(flow.firstDone === true, 'checkbox click marks the first todo done');
     assert(flow.summaryAfterToggle === '共 2 项，1 项未完成', 'summary counts only unfinished todos');
     assert(flow.remainingTexts.length === 1 && flow.remainingTexts[0] === '写冒烟测试', 'delete removes the clicked todo');
@@ -335,6 +350,45 @@ async function main() {
     assert(search.afterClearClearHidden === true, 'clear button hides when the search is empty');
     assert(search.afterClearStorage === 3, 'clearing the search leaves stored data untouched');
     assert(search.afterEscapeValue === '' && search.afterEscapeCount === 3, 'Escape clears the search and restores the full list');
+
+    console.log('\n[5] Search and priority sorting together');
+    const combined = await cdp.evaluate(`(() => {
+      const q = (s) => document.querySelector(s);
+      const qa = (s) => [...document.querySelectorAll(s)];
+      const add = (text, priority) => {
+        q('#priority-input').value = priority;
+        q('#todo-input').value = text;
+        q('#todo-form').dispatchEvent(new Event('submit', { bubbles: true, cancelable: true }));
+      };
+      add('Task low', 'low');
+      add('Task high', 'high');
+      add('Task medium', 'medium');
+      q('#search-input').value = 'task';
+      q('#search-input').dispatchEvent(new Event('input', { bubbles: true }));
+      q('#priority-sort').value = 'priority';
+      q('#priority-sort').dispatchEvent(new Event('change', { bubbles: true }));
+      const before = qa('.todo__text').map((el) => el.textContent);
+      qa('.todo__checkbox')[0].click();
+      const done = q('.todo').classList.contains('todo--done');
+      const afterComplete = qa('.todo__text').map((el) => el.textContent);
+      qa('.todo__delete')[2].click();
+      const afterDelete = qa('.todo__text').map((el) => el.textContent);
+      const storedCount = JSON.parse(localStorage.getItem('t3-todo-app.v1')).length;
+      q('#search-clear').click();
+      return {
+        before,
+        done,
+        afterComplete,
+        afterDelete,
+        storedCount,
+        afterClearCount: qa('.todo').length,
+      };
+    })()`);
+    assert(combined.before.join('|') === 'Task high|Task medium|Task low', 'search results are sorted by priority');
+    assert(combined.done === true && combined.afterComplete[0] === 'Task high', 'completion keeps the active search and sort');
+    assert(combined.afterDelete.join('|') === 'Task high|Task medium', 'deletion keeps search and sort on remaining matches');
+    assert(combined.storedCount === 5, 'search and sort do not remove non-matching todos from storage');
+    assert(combined.afterClearCount === 5, 'clearing the search restores all remaining todos');
 
     assert(pageErrors.length === 0, 'no uncaught page exceptions (' + pageErrors.length + ')');
     console.log('\nSMOKE TEST PASSED');

@@ -15,6 +15,7 @@
 
   const STORAGE_KEY = 't3-todo-app.v1';
   const MAX_TEXT_LENGTH = 200;
+  const PRIORITIES = ['high', 'medium', 'low'];
 
   function makeId() {
     if (typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function') {
@@ -32,6 +33,7 @@
       text: normalized,
       done: false,
       createdAt: typeof opts.now === 'number' ? opts.now : Date.now(),
+      priority: PRIORITIES.includes(opts.priority) ? opts.priority : 'medium',
     };
   }
 
@@ -43,7 +45,7 @@
 
   function toggleTodo(todos, id) {
     return todos.map(function (todo) {
-      return todo.id === id ? { id: todo.id, text: todo.text, done: !todo.done, createdAt: todo.createdAt } : todo;
+      return todo.id === id ? Object.assign({}, todo, { done: !todo.done }) : todo;
     });
   }
 
@@ -57,6 +59,15 @@
     return todos.filter(function (todo) {
       return !todo.done;
     }).length;
+  }
+
+  function sortByPriority(todos) {
+    const rank = { high: 0, medium: 1, low: 2 };
+    return todos.map(function (todo, index) { return { todo: todo, index: index }; })
+      .sort(function (a, b) {
+        return (rank[a.todo.priority] === undefined ? 1 : rank[a.todo.priority]) -
+          (rank[b.todo.priority] === undefined ? 1 : rank[b.todo.priority]) || a.index - b.index;
+      }).map(function (entry) { return entry.todo; });
   }
 
   /**
@@ -81,6 +92,7 @@
       text: text,
       done: value.done === true,
       createdAt: typeof value.createdAt === 'number' && isFinite(value.createdAt) ? value.createdAt : 0,
+      priority: PRIORITIES.includes(value.priority) ? value.priority : 'medium',
     };
   }
 
@@ -115,6 +127,7 @@
     toggleTodo: toggleTodo,
     removeTodo: removeTodo,
     countRemaining: countRemaining,
+    sortByPriority: sortByPriority,
     filterTodos: filterTodos,
     sanitizeTodos: sanitizeTodos,
     loadTodos: loadTodos,
