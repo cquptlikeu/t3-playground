@@ -1,0 +1,39 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>待办事项</title>
+  <link rel="stylesheet" href="styles.css" />
+</head>
+<body>
+  <main class="app">
+    <header class="app__header">
+      <h1 class="app__title">待办事项</h1>
+      <p class="app__subtitle">记录今天要做的事，数据保存在本机浏览器中。</p>
+    </header>
+
+    <form id="todo-form" class="composer" autocomplete="off">
+      <label class="visually-hidden" for="todo-input">新增待办</label>
+      <input
+        id="todo-input"
+        class="composer__input"
+        type="text"
+        placeholder="输入待办内容，按 Enter 添加"
+        maxlength="200"
+      />
+      <button class="composer__submit" type="submit">添加</button>
+    </form>
+
+    <p id="summary" class="summary" aria-live="polite"></p>
+
+    <ul id="todo-list" class="todo-list" aria-label="待办列表"></ul>
+    <p id="empty-state" class="empty-state">还没有待办，先添加一条吧。</p>
+
+    <p id="status" class="status" role="status" aria-live="polite"></p>
+  </main>
+
+  <script src="store.js"></script>
+  <script src="app.js"></script>
+</body>
+</html>

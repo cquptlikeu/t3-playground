@@ -1,0 +1,288 @@
+'use strict';
+
+/*
+ * 浏览器端冒烟测试（可选，需要本机安装 Chrome）：
+ * 用 Node 内置模块启动静态服务器，通过 DevTools 协议驱动 headless Chrome，
+ * 验证新增 / 完成 / 删除 / 刷新后持久化。无需安装任何 npm 依赖。
+ *
+ * 用法：node tests/browser-smoke.js
+ * 自定义 Chrome 路径：CHROME_PATH=/path/to/chrome node tests/browser-smoke.js
+ */
+
+const http = require('http');
+const fs = require('fs');
+const path = require('path');
+const os = require('os');
+const { spawn } = require('child_process');
+
+const ROOT = path.resolve(__dirname, '..');
+const SERVER_PORT = Number(process.env.SMOKE_PORT || 8137);
+const CDP_PORT = Number(process.env.SMOKE_CDP_PORT || 9333);
+const MIME = {
+  '.html': 'text/html; charset=utf-8',
+  '.js': 'text/javascript; charset=utf-8',
+  '.css': 'text/css; charset=utf-8',
+};
+
+function findChrome() {
+  if (process.env.CHROME_PATH) return process.env.CHROME_PATH;
+  const candidates = [
+    'C:/Program Files/Google/Chrome/Application/chrome.exe',
+    'C:/Program Files (x86)/Google/Chrome/Application/chrome.exe',
+    'C:/Program Files (x86)/Microsoft/Edge/Application/msedge.exe',
+    '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome',
+    '/usr/bin/google-chrome',
+    '/usr/bin/chromium',
+    '/usr/bin/chromium-browser',
+  ];
+  return candidates.find((candidate) => fs.existsSync(candidate)) || '';
+}
+
+const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
+
+function assert(condition, message) {
+  if (!condition) throw new Error('ASSERTION FAILED: ' + message);
+  console.log('  ok - ' + message);
+}
+
+function startServer() {
+  const server = http.createServer((req, res) => {
+    const urlPath = decodeURIComponent(req.url.split('?')[0]);
+    const relative = urlPath === '/' ? 'index.html' : urlPath.replace(/^\/+/, '');
+    const filePath = path.join(ROOT, relative);
+    if (!filePath.startsWith(ROOT + path.sep)) {
+      res.writeHead(403);
+      res.end('forbidden');
+      return;
+    }
+    fs.readFile(filePath, (err, data) => {
+      if (err) {
+        res.writeHead(404);
+        res.end('not found');
+        return;
+      }
+      res.writeHead(200, { 'Content-Type': MIME[path.extname(filePath)] || 'application/octet-stream' });
+      res.end(data);
+    });
+  });
+  return new Promise((resolve) => server.listen(SERVER_PORT, '127.0.0.1', () => resolve(server)));
+}
+
+async function waitForTarget() {
+  for (let i = 0; i < 100; i++) {
+    try {
+      const response = await fetch('http://127.0.0.1:' + CDP_PORT + '/json/list');
+      const targets = await response.json();
+      const page = targets.find((t) => t.type === 'page' && t.url.includes('index.html'));
+      if (page && page.webSocketDebuggerUrl) return page.webSocketDebuggerUrl;
+    } catch (error) {
+      /* Chrome not ready yet */
+    }
+    await sleep(150);
+  }
+  throw new Error('Timed out waiting for the Chrome DevTools target');
+}
+
+class CDP {
+  constructor(ws) {
+    this.ws = ws;
+    this.nextId = 0;
+    this.pending = new Map();
+    this.handlers = new Map();
+    ws.onmessage = (event) => {
+      const message = JSON.parse(event.data);
+      if (message.id) {
+        const entry = this.pending.get(message.id);
+        if (!entry) return;
+        this.pending.delete(message.id);
+        if (message.error) entry.reject(new Error(message.method + ': ' + message.error.message));
+        else entry.resolve(message.result);
+      } else if (message.method) {
+        (this.handlers.get(message.method) || []).forEach((handler) => handler(message.params));
+      }
+    };
+  }
+
+  send(method, params) {
+    const id = ++this.nextId;
+    return new Promise((resolve, reject) => {
+      this.pending.set(id, { resolve, reject });
+      this.ws.send(JSON.stringify({ id, method, params: params || {} }));
+    });
+  }
+
+  on(method, handler) {
+    if (!this.handlers.has(method)) this.handlers.set(method, []);
+    this.handlers.get(method).push(handler);
+  }
+
+  once(method) {
+    return new Promise((resolve) => {
+      const handler = (params) => {
+        const list = this.handlers.get(method) || [];
+        this.handlers.set(method, list.filter((h) => h !== handler));
+        resolve(params);
+      };
+      this.on(method, handler);
+    });
+  }
+
+  async evaluate(expression) {
+    const result = await this.send('Runtime.evaluate', {
+      expression,
+      awaitPromise: true,
+      returnByValue: true,
+    });
+    if (result.exceptionDetails) {
+      throw new Error('Page script error: ' + JSON.stringify(result.exceptionDetails.exception || result.exceptionDetails));
+    }
+    return result.result.value;
+  }
+}
+
+async function main() {
+  const chromePath = findChrome();
+  if (!chromePath) {
+    throw new Error('未找到 Chrome，请用 CHROME_PATH 环境变量指定浏览器可执行文件');
+  }
+
+  const server = await startServer();
+  const userDataDir = path.join(os.tmpdir(), 'todo-smoke-profile-' + Date.now());
+  const chrome = spawn(
+    chromePath,
+    [
+      '--headless=new',
+      '--disable-gpu',
+      '--no-first-run',
+      '--no-default-browser-check',
+      '--remote-debugging-port=' + CDP_PORT,
+      '--user-data-dir=' + userDataDir,
+      '--window-size=1280,900',
+      'http://127.0.0.1:' + SERVER_PORT + '/index.html',
+    ],
+    { stdio: 'ignore' }
+  );
+
+  let ws;
+  try {
+    const wsUrl = await waitForTarget();
+    ws = new WebSocket(wsUrl);
+    await new Promise((resolve, reject) => {
+      ws.onopen = resolve;
+      ws.onerror = () => reject(new Error('WebSocket connection failed'));
+    });
+
+    const cdp = new CDP(ws);
+    const pageErrors = [];
+    await cdp.send('Runtime.enable');
+    await cdp.send('Page.enable');
+    cdp.on('Runtime.exceptionThrown', (params) => {
+      pageErrors.push(params.exceptionDetails.text || 'unknown exception');
+    });
+
+    let pageReady = false;
+    for (let attempt = 0; attempt < 100; attempt++) {
+      try {
+        pageReady = await cdp.evaluate(
+          'location.href.includes("index.html") && document.readyState === "complete" && !!document.querySelector("#empty-state")'
+        );
+      } catch (error) {
+        pageReady = false;
+      }
+      if (pageReady) break;
+      await sleep(100);
+    }
+    if (!pageReady) {
+      throw new Error('App page did not initialize; current location: ' + (await cdp.evaluate('location.href')));
+    }
+
+    console.log('\n[1] Initial render');
+    const initial = await cdp.evaluate(`({
+      emptyVisible: !document.querySelector('#empty-state').hidden,
+      listHidden: document.querySelector('#todo-list').hidden,
+      count: document.querySelectorAll('.todo').length,
+      summary: document.querySelector('#summary').textContent
+    })`);
+    assert(initial.emptyVisible === true, 'empty state is visible on first load');
+    assert(initial.listHidden === true, 'todo list is hidden when empty');
+    assert(initial.count === 0, 'no todo items initially');
+
+    console.log('\n[2] Add / complete / delete via real DOM events');
+    const flow = await cdp.evaluate(`(() => {
+      const q = (s) => document.querySelector(s);
+      const qa = (s) => [...document.querySelectorAll(s)];
+      const add = (text) => {
+        q('#todo-input').value = text;
+        q('#todo-form').dispatchEvent(new Event('submit', { bubbles: true, cancelable: true }));
+      };
+      const out = {};
+
+      add('  写冒烟测试  ');
+      out.afterFirstAdd = qa('.todo__text').map((el) => el.textContent);
+      out.inputCleared = q('#todo-input').value === '';
+      out.emptyHidden = q('#empty-state').hidden;
+      out.summaryAfterAdd = q('#summary').textContent;
+
+      add('第二条');
+      out.countAfterSecondAdd = qa('.todo').length;
+
+      qa('.todo__checkbox')[0].click();
+      out.firstDone = q('.todo').classList.contains('todo--done');
+      out.summaryAfterToggle = q('#summary').textContent;
+
+      qa('.todo__delete')[1].click();
+      out.remainingTexts = qa('.todo__text').map((el) => el.textContent);
+      out.summaryAfterDelete = q('#summary').textContent;
+      out.storage = JSON.parse(localStorage.getItem('t3-todo-app.v1'));
+
+      q('#todo-input').value = '   ';
+      q('#todo-form').dispatchEvent(new Event('submit', { bubbles: true, cancelable: true }));
+      out.blankInputIgnored = qa('.todo').length === 1;
+      return out;
+    })()`);
+    assert(flow.afterFirstAdd.length === 1 && flow.afterFirstAdd[0] === '写冒烟测试', 'first todo is added and trimmed');
+    assert(flow.inputCleared === true, 'input is cleared after adding');
+    assert(flow.emptyHidden === true, 'empty state hides after adding');
+    assert(flow.countAfterSecondAdd === 2, 'second todo is added');
+    assert(flow.firstDone === true, 'checkbox click marks the first todo done');
+    assert(flow.summaryAfterToggle === '共 2 项，1 项未完成', 'summary counts only unfinished todos');
+    assert(flow.remainingTexts.length === 1 && flow.remainingTexts[0] === '写冒烟测试', 'delete removes the clicked todo');
+    assert(flow.summaryAfterDelete === '共 1 项，0 项未完成', 'summary updates after delete');
+    assert(flow.storage.length === 1 && flow.storage[0].done === true && flow.storage[0].text === '写冒烟测试', 'localStorage holds the surviving todo');
+    assert(flow.blankInputIgnored === true, 'blank input does not add a todo');
+
+    console.log('\n[3] Reload persistence');
+    const loaded = cdp.once('Page.loadEventFired');
+    await cdp.send('Page.reload');
+    await loaded;
+    await cdp.evaluate('new Promise((resolve) => setTimeout(resolve, 150))');
+    const afterReload = await cdp.evaluate(`({
+      texts: [...document.querySelectorAll('.todo__text')].map((el) => el.textContent),
+      done: document.querySelector('.todo') ? document.querySelector('.todo').classList.contains('todo--done') : null,
+      summary: document.querySelector('#summary').textContent,
+      emptyHidden: document.querySelector('#empty-state').hidden
+    })`);
+    assert(afterReload.texts.length === 1 && afterReload.texts[0] === '写冒烟测试', 'todo survives a page reload');
+    assert(afterReload.done === true, 'completed state survives a page reload');
+    assert(afterReload.emptyHidden === true, 'empty state stays hidden after reload');
+    assert(afterReload.summary === '共 1 项，0 项未完成', 'summary is restored after reload');
+
+    assert(pageErrors.length === 0, 'no uncaught page exceptions (' + pageErrors.length + ')');
+    console.log('\nSMOKE TEST PASSED');
+  } finally {
+    if (ws && ws.readyState === WebSocket.OPEN) ws.close();
+    chrome.kill();
+    server.close();
+    await sleep(300);
+    try {
+      fs.rmSync(userDataDir, { recursive: true, force: true, maxRetries: 5, retryDelay: 200 });
+    } catch (error) {
+      console.warn('(profile cleanup skipped: ' + error.code + ')');
+    }
+  }
+}
+
+main().catch((error) => {
+  console.error('\nSMOKE TEST FAILED:', error.message);
+  process.exitCode = 1;
+});
